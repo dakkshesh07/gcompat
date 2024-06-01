@@ -4,12 +4,10 @@
 #include <stddef.h> /* NULL, size_t */
 #include <stdlib.h> /* getenv, realpath, strto* */
 #include <unistd.h> /* get*id */
-#include <fcntl.h> /* for open() */
-#include <poll.h> /* for poll() */
-#include <stdint.h> /* for uint8_t, uint32_t */
-#include <errno.h> /* for ENOSYS */
-#include <stdatomic.h> /* for atomic operations */
-#include <sys/syscall.h> /* SYS_getrandom */
+#include <stdint.h>
+#include <time.h>
+#include <fcntl.h>
+#include <sys/types.h>
 #include "alias.h"
 
 /**
@@ -175,72 +173,34 @@ unsigned long long int __isoc23_strtoull_l(const char *nptr, char **endptr, int 
     return strtoull(nptr, endptr, base);
 }
 
-/* Function to handle fatal errors */
-static void arc4random_getrandom_failure(void)
-{
-    write(STDERR_FILENO, "Fatal error: cannot get entropy for arc4random\n", 48);
-    abort();
+unsigned int hash_combine(unsigned int seed, unsigned int v) {
+    seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    return seed;
 }
 
-/* Function to fill a buffer with random data */
-void arc4random_buf(void *p, size_t n)
-{
-    static atomic_int seen_initialized = ATOMIC_VAR_INIT(0);
-    ssize_t l;
-    int fd;
+unsigned int GetRandomNumberSeed() {
+    int urandomFD = open("/dev/urandom", O_RDONLY);
+    unsigned int seed;
 
-    if (n == 0)
-        return;
-
-    for (;;) {
-        l = syscall(SYS_getrandom, p, n, 0);
-        if (l > 0) {
-            if ((size_t)l == n)
-                return; /* Done reading, success. */
-            p = (uint8_t *)p + l;
-            n -= l;
-            continue; /* Interrupted by a signal; keep going. */
-        } else if (l == -1 && errno == ENOSYS) {
-            break; /* No syscall, so fallback to /dev/urandom. */
-        }
-        arc4random_getrandom_failure();
+    if (urandomFD != -1) {
+        int count = read(urandomFD, &seed, sizeof(seed));
+        close(urandomFD);
+        if (count == sizeof(seed))
+            return seed;
     }
 
-    if (atomic_load(&seen_initialized) == 0) {
-        /* Poll /dev/random as an approximation of RNG initialization. */
-        struct pollfd pfd = { .events = POLLIN };
-        pfd.fd = open("/dev/random", O_RDONLY | O_CLOEXEC | O_NOCTTY);
-        if (pfd.fd < 0)
-            arc4random_getrandom_failure();
-        if (poll(&pfd, 1, -1) < 0)
-            arc4random_getrandom_failure();
-        if (close(pfd.fd) < 0)
-            arc4random_getrandom_failure();
-        atomic_store(&seen_initialized, 1);
-    }
-
-    fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC | O_NOCTTY);
-    if (fd < 0)
-        arc4random_getrandom_failure();
-    for (;;) {
-        l = read(fd, p, n);
-        if (l <= 0)
-            arc4random_getrandom_failure();
-        if ((size_t)l == n)
-            break; /* Done reading, success. */
-        p = (uint8_t *)p + l;
-        n -= l;
-    }
-    if (close(fd) < 0)
-        arc4random_getrandom_failure();
+    time_t now = time(NULL);
+    return hash_combine(now, getpid());
 }
-weak_alias(arc4random_buf, __arc4random_buf);
 
 /* Function to generate a random 32-bit number */
 uint32_t arc4random(void)
 {
-    uint32_t r;
-    arc4random_buf(&r, sizeof(r));
-    return r;
+    static int x = 0;
+    if (x == 0) {
+        srand(GetRandomNumberSeed());
+        x = 1; // Set x to a non-zero value to avoid re-seeding on subsequent calls
+    }
+    return rand();
 }
 weak_alias(arc4random, __arc4random);
