@@ -9,6 +9,7 @@
 #include <stdint.h> /* for uint8_t, uint32_t */
 #include <errno.h> /* for ENOSYS */
 #include <stdatomic.h> /* for atomic operations */
+#include <sys/syscall.h> /* SYS_getrandom */
 #include "alias.h"
 
 /**
