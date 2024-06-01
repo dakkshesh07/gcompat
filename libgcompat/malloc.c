@@ -44,6 +44,19 @@ struct mallinfo {
 	int keepcost; /* Top-most, releasable space (bytes) */
 };
 
+struct mallinfo2 {
+    size_t arena;    /* non-mmapped space allocated from system */
+    size_t ordblks;  /* number of free chunks */
+    size_t smblks;   /* number of fastbin blocks */
+    size_t hblks;    /* number of mmapped regions */
+    size_t hblkhd;   /* space in mmapped regions */
+    size_t usmblks;  /* always 0, preserved for backwards compatibility */
+    size_t fsmblks;  /* space available in freed fastbin blocks */
+    size_t uordblks; /* total allocated space */
+    size_t fordblks; /* total free space */
+    size_t keepcost; /* top-most, releasable (via malloc_trim) space */
+};
+
 void *__libc_calloc(size_t nmemb, size_t size)
 {
 	return calloc(nmemb, size);
@@ -88,6 +101,13 @@ struct mallinfo mallinfo(void)
 	memset(&info, 0, sizeof(info));
 	return info;
 }
+
+struct mallinfo2 mallinfo2(void) {
+    struct mallinfo2 info2;
+    memset(&info2, 0, sizeof(info2));
+    return info2;
+}
+alias(mallinfo2, __mallinfo2);
 
 int malloc_trim(size_t pad)
 {
